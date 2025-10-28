@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"syscall"
 )
 
 func main() {
@@ -16,4 +18,17 @@ func main() {
 
 func run() {
 	fmt.Printf("Running %v\n", os.Args[2:])
+
+	cmd := exec.Command(os.Args[2], os.Args[3:]...)
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUTS,
+	}
+
+	if err := cmd.Run(); err != nil {
+		panic(err)
+	}
 }
