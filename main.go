@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"syscall"
 )
 
@@ -31,18 +33,11 @@ func run() {
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
-	if err := cmd.Run(); err != nil {
-		panic(err)
-	}
+	must(cmd.Run())
 }
 
 func child() {
 	fmt.Printf("Running %v %d\n", os.Args[2:], os.Getpid())
-
-	syscall.Sethostname([]byte("container"))
-	syscall.Chroot("/vagrant/ubuntu-fs")
-	syscall.Chdir("/")
-	syscall.Mount("proc", "proc", "proc", 0, "")
 
 	cmd := exec.Command(os.Args[2], os.Args[3:]...)
 
@@ -50,9 +45,34 @@ func child() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		panic(err)
-	}
+	syscall.Sethostname([]byte("container"))
+	syscall.Chroot("/vagrant/ubuntu-fs")
+	syscall.Chdir("/")
+	syscall.Mount("proc", "proc", "proc", 0, "")
+	syscall.Mount("thing", "mytemp", "tempfs", 0, "")
+
+	cg()
+
+	must(cmd.Run())
 
 	syscall.Unmount("/proc", 0)
+	syscall.Unmount("/thing", 0)
+}
+
+func cg() {
+	cgroups := "/sys/fs/cgroup/"
+	pids := filepath.Join(cgroups, "pids")
+	err := os.Mkdir(filepath.Join(pids, "docker-go"), 0755)
+	if err != nil && !os.IsExist(err) {
+		panic(err)
+	}
+	must(os.WriteFile(filepath.Join(pids, "docker-go/pids.max"), []byte("20"), 0700))
+	must(os.WriteFile(filepath.Join(pids, "docker-go/notify_on_release"), []byte("1"), 0700))
+	must(os.WriteFile(filepath.Join(pids, "docker-go/cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0700))
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
